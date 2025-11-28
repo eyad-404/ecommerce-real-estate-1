@@ -66,7 +66,7 @@ Route::get('/users-management', [UserController::class, 'usersManagement'])->mid
 Route::post('/users', [UserController::class, 'store'])->name('users.store');
 Route::get('/users/search', [UserController::class, 'search'])->name('users.search');
 Route::delete('/users/{user}', [UserController::class, 'destroy'])->name('users.destroy');
-Route::put('/users/{user}', [UserController::class, 'update'])->name('users.update');
+//Route::put('/users/{user}', [UserController::class, 'update'])->name('users.update');
 
 Route::middleware(['auth'])->group(function () {
     Route::resource('properties', PropertyController::class)
