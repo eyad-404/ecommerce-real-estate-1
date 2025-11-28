@@ -61,7 +61,7 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/profile/check-password', [ProfileController::class, 'checkPassword'])->name('profile.checkPassword');
 });
 
-Route::get('/users-management', [UserController::class, 'usersManagement'])->middleware(Role::class .':admin')->name('users-management');
+Route::get('/users-management', [UserController::class, 'usersManagement'])->middleware(Role::class .':admin,seller')->name('users-management');
 
 Route::post('/users', [UserController::class, 'store'])->name('users.store');
 Route::get('/users/search', [UserController::class, 'search'])->name('users.search');
