@@ -1,9 +1,0 @@
-:8080
-
-root * /var/www/public
-
-php_fastcgi unix//var/run/php/php8.2-fpm.sock {
-    env PATH /usr/local/bin:/usr/bin:/bin
-}
-
-file_server
