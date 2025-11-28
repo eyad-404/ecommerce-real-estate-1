@@ -1,53 +1,35 @@
-# Stage 1: PHP + Composer
-FROM php:8.2-fpm-alpine AS base
+# Base image
+FROM php:8.2-fpm
+
+# Set working directory
+WORKDIR /var/www
 
 # Install system dependencies
-RUN apk add --no-cache \
-    bash \
-    git \
-    unzip \
-    libpng libpng-dev \
-    libjpeg-turbo-dev \
-    freetype-dev \
-    libzip-dev \
-    oniguruma-dev \
-    curl \
-    && docker-php-ext-install pdo_mysql mbstring zip exif pcntl gd
+RUN apt-get update && apt-get install -y \
+    git unzip libzip-dev libonig-dev libpng-dev libjpeg-dev libfreetype6-dev curl \
+    && docker-php-ext-install pdo_mysql mbstring zip exif pcntl gd \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
-WORKDIR /var/www/html
-
-# Copy composer files
-COPY composer.json composer.lock ./
-
-# Install PHP dependencies
+# Install Composer
 RUN php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');" \
     && php composer-setup.php --install-dir=/usr/local/bin --filename=composer \
-    && php -r "unlink('composer-setup.php');" \
-    && composer install --no-dev --optimize-autoloader
+    && php -r "unlink('composer-setup.php');"
 
-# Copy app source
-COPY . .
+# Copy composer files first for caching
+COPY composer.json composer.lock /var/www/
 
-# Cache config & routes
-RUN php artisan config:cache \
-    && php artisan route:cache \
-    && php artisan view:cache
+# Install PHP dependencies
+RUN composer install --no-dev --optimize-autoloader
 
-# Stage 2: Caddy for serving Laravel
-FROM caddy:2.8.0-alpine
+# Copy the rest of the application
+COPY . /var/www
 
-# Copy Laravel app from base
-COPY --from=base /var/www/html /srv/app
+# Set permissions
+RUN chown -R www-data:www-data /var/www \
+    && chmod -R 775 /var/www/storage /var/www/bootstrap/cache
 
-# Set working directory
-WORKDIR /srv/app
-
-# Copy Caddyfile
-COPY Caddyfile /etc/caddy/Caddyfile
-
-# Expose port 8080 (Render default HTTP)
+# Expose port for Render
 EXPOSE 8080
 
-# Start Caddy
-CMD ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+# Start Caddy server (defined in Caddyfile)
+CMD ["caddy", "run", "--config", "/var/www/Caddyfile", "--adapter", "caddyfile"]
