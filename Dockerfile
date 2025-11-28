@@ -30,10 +30,10 @@ RUN php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');" \
     && php -r "unlink('composer-setup.php');"
 
 # =====================
-# 5️⃣ Copy composer files & install PHP dependencies
+# 5️⃣ Copy composer files & install PHP dependencies (without scripts to avoid artisan errors)
 # =====================
 COPY composer.json composer.lock ./
-RUN composer install --no-dev --optimize-autoloader --ignore-platform-reqs
+RUN composer install --no-dev --optimize-autoloader --ignore-platform-reqs --no-scripts
 
 # =====================
 # 6️⃣ Copy the rest of the application
