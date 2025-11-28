@@ -133,4 +133,10 @@ Route::get('/clear-all', function() {
     Artisan::call('view:clear');
     return "All caches cleared!";
 });
-
+Route::get('/check-users-table', function () {
+    if (\Illuminate\Support\Facades\Schema::hasTable('users')) {
+        return "Users table exists";
+    } else {
+        return "Users table does NOT exist";
+    }
+});
