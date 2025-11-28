@@ -1,41 +1,24 @@
-# 1. استخدم صورة PHP مع FPM
-FROM php:8.2-fpm
+FROM dunglas/frankenphp:php8.2
 
-# 2. تثبيت dependencies الأساسية
-RUN apt-get update && apt-get install -y \
-    git \
-    unzip \
-    libzip-dev \
-    libonig-dev \
-    libpng-dev \
-    libjpeg-dev \
-    libfreetype6-dev \
-    curl \
-    && docker-php-ext-install pdo_mysql mbstring zip exif pcntl gd
+WORKDIR /app
 
-# 3. تثبيت Composer
-COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+# Install system dependencies
+RUN apt-get update && \
+    apt-get install -y git unzip && \
+    docker-php-ext-install pdo_mysql
 
-# 4. إنشاء مجلد العمل
-WORKDIR /var/www/html
+# Copy project
+COPY . /app
 
-# 5. نسخ ملفات المشروع
-COPY . .
+# Install Composer dependencies
+RUN composer install --optimize-autoloader --no-dev
 
-# 6. تثبيت الـ PHP dependencies للمشروع
-RUN composer install --no-dev --optimize-autoloader
+# Laravel permissions
+RUN mkdir -p storage/framework/{sessions,views,cache} \
+    && chmod -R a+rw storage bootstrap/cache
 
-# 7. تعديل صلاحيات المجلدات المهمة
-RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache \
-    && chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
+# Caddy config
+COPY ./Caddyfile /etc/caddy/Caddyfile
 
-# 8. Cache config & routes & views
-RUN php artisan config:cache \
-    && php artisan route:cache \
-    && php artisan view:cache
-
-# 9. expose البورت الافتراضي (PHP-FPM يستخدم 9000)
-EXPOSE 9000
-
-# 10. تشغيل PHP-FPM
-CMD ["php-fpm"]
+EXPOSE 8080
+CMD ["frankenphp", "run", "--config=/etc/caddy/Caddyfile"]
