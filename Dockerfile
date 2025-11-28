@@ -1,43 +1,66 @@
-# ===============================
-# Dockerfile for Laravel on Render
-# ===============================
-
-# Base image
+# =====================
+# 1️⃣ Base image
+# =====================
 FROM php:8.2-fpm
 
-# Set working directory
-WORKDIR /var/www/html
-
-# Install system dependencies
+# =====================
+# 2️⃣ System dependencies
+# =====================
 RUN apt-get update && apt-get install -y \
-    git unzip libzip-dev libonig-dev libpng-dev libjpeg-dev libfreetype6-dev \
-    curl zip \
+    git \
+    unzip \
+    libzip-dev \
+    libonig-dev \
+    libpng-dev \
+    libjpeg-dev \
+    libfreetype6-dev \
     && docker-php-ext-install pdo_mysql mbstring zip exif pcntl gd \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Copy composer.json and composer.lock first to leverage caching
-COPY composer.json composer.lock ./
+# =====================
+# 3️⃣ Set working directory
+# =====================
+WORKDIR /var/www/html
 
-# Install Composer
+# =====================
+# 4️⃣ Install Composer
+# =====================
 RUN php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');" \
     && php composer-setup.php --install-dir=/usr/local/bin --filename=composer \
-    && php -r "unlink('composer-setup.php');" \
-    && composer install --no-dev --optimize-autoloader --ignore-platform-reqs
+    && php -r "unlink('composer-setup.php');"
 
-# Copy the rest of the Laravel app
+# =====================
+# 5️⃣ Copy composer files & install PHP dependencies
+# =====================
+COPY composer.json composer.lock ./
+RUN composer install --no-dev --optimize-autoloader --ignore-platform-reqs
+
+# =====================
+# 6️⃣ Copy the rest of the application
+# =====================
 COPY . .
 
-# Set permissions for storage and bootstrap/cache
+# =====================
+# 7️⃣ Set permissions
+# =====================
 RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache \
     && chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
 
-# Expose port for Render
-EXPOSE 10000
-
-# Set environment variables defaults (can override in Render dashboard)
+# =====================
+# 8️⃣ Environment variables
+# =====================
 ENV APP_ENV=production
 ENV APP_DEBUG=false
-ENV APP_KEY=
+# غيّر APP_URL لرابط التطبيق على Render
+ENV APP_URL=https://your-app-name.onrender.com
 
-# Start PHP-FPM (Render reverse proxy will handle public HTTP)
+# =====================
+# 9️⃣ Generate app key if missing
+# =====================
+RUN php artisan key:generate
+
+# =====================
+# 🔥 Expose port and start PHP-FPM
+# =====================
+EXPOSE 10000
 CMD ["php-fpm"]
