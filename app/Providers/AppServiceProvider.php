@@ -24,8 +24,5 @@ class AppServiceProvider extends ServiceProvider
         if (app()->environment('production')) {
             URL::forceScheme('https');
         }
-
-        // Register the login observer
-        Event::listen(Login::class, [SendLoginPopup::class, 'handle']);
     }
 }
