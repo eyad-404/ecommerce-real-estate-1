@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Models\Property;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Http\Request;
+use App\Services\Logger;
 
 class UserController extends Controller
 {
@@ -31,6 +32,8 @@ class UserController extends Controller
     
     public function store(Request $request)
 {
+    $logger = \App\Services\Logger::getInstance();
+    try {
     $data = $request->validate([
         'name' => 'required|string|max:30',
         'email' => 'required|string|email|unique:users,email|max:60',
@@ -56,19 +59,47 @@ class UserController extends Controller
             'phone'=> $data['phone'],
             'role'=> $data['role'],
     ]);
+        $logger->info('New user created successfully', [
+            'user_id' => $user->id,
+            'email' => $user->email,
+        ]);
 
     if ($request->ajax()) {
         return response()->json(['success' => true, 'user' => $user]);
     }
 
     return back()->with('success', 'User created successfully');
+    } catch (\Exception $e) {
+        $logger->error('User creation failed', [
+            'email' => $request->email,
+            'error' => $e->getMessage(),
+        ]);
+
+        if ($request->ajax()) {
+            return response()->json(['error' => 'User creation failed'], 500);
+        }
+
+        return back()->with('error', 'Failed to create user. Please try again.');
+    }
 }
 
 
     // UserController.php
 public function search(Request $request)
 {
-    $query = $request->input('query');
+    $logger = Logger::getInstance();
+    
+    try {
+        $logger->info('User search performed', [
+            'user_id' => auth()->id(),
+            'search_query' => $query,
+        ]);
+    } catch (\Exception $e) {
+        $logger->error('Logging failed on user search', [
+            'user_id' => auth()->id(),
+            'error' => $e->getMessage(),
+        ]);
+    }
 
     $users = User::where('name', 'like', "%{$query}%")
                 ->orWhere('email', 'like', "%{$query}%")
@@ -90,6 +121,7 @@ public function search(Request $request)
 
     public function update(Request $request, User $user)
 {
+    $logger = Logger::getInstance();
     try {
         $data = $request->validate([
             'name' => 'required|string|max:30',
@@ -113,10 +145,23 @@ public function search(Request $request)
 
         $user->update($data);
 
+        $logger->info('User updated successfully', [
+            'user_id' => $user->id,
+            'email' => $user->email,
+            'updated_by' => auth()->id(),
+        ]);
+
         // Return JSON for AJAX
         return response()->json(['success' => true, 'user' => $user]);
 
     } catch (\Exception $e) {
+        $logger->error('User update failed', [
+            'user_id' => $user->id,
+            'email' => $user->email,
+            'updated_by' => auth()->id(),
+            'error' => $e->getMessage(),
+        ]);
+
         return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
     }
 }
@@ -125,25 +170,57 @@ public function search(Request $request)
 
     public function destroy(User $user)
 {
+    $logger = Logger::getInstance();
     try {
         $user->delete();
+        
+        $logger->info('User deleted successfully', [
+            'user_id' => $user->id,
+            'deleted_by' => auth()->id(),
+        ]);
+
         if(request()->ajax()) {
             return response()->json(['success' => true]);
         }
         return redirect()->route('users.index')->with('success', 'User deleted successfully');
     } catch (\Exception $e) {
+        $logger->error('User deletion failed', [
+            'user_id' => $user->id,
+            'deleted_by' => auth()->id(),
+            'error' => $e->getMessage(),
+        ]);
+
         if(request()->ajax()) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
+
         return back()->with('error', 'Something went wrong: ' . $e->getMessage());
     }
 }
 
     public function usersManagement()
     {
+        $logger = \App\Services\Logger::getInstance();
+        try {
         $users = User::all();
         $properties = Property::all();
+            
+            $logger->info('Accessed users management page', [
+            'accessed_by' => auth()->id(),
+            'users_count' => $users->count(),
+            'properties_count' => $properties->count(),
+        ]);
+            
         return view('users.users-management', compact('users', 'properties'));
+            
+        } catch (\Exception $e) {
+        $logger->error('Failed to load users management page', [
+            'accessed_by' => auth()->id(),
+            'error' => $e->getMessage(),
+        ]);
+            
+        return back()->with('error', 'Unable to load users management page.');
+    }
     }
 
 }
