@@ -10,9 +10,22 @@ use Illuminate\Support\Facades\Hash;
 class AuthController extends Controller
 {
     public function showRegister(){
+        $logger = \App\Services\Logger::getInstance();
+
+    try {
+        $logger->info('Register page accessed', [
+            'accessed_by' => auth()->id() ?? null,
+        ]);
+    } catch (\Exception $e) {
+        $logger->error('Register page access logging failed', [
+            'error' => $e->getMessage(),
+        ]);
+    }
         return view('myauth.register');
     }
     public function register(Request $request){
+        $logger = \App\Services\Logger::getInstance();
+        
     try {
         $data = $request->validate([
             'name' => 'required|string|max:255',
@@ -41,59 +54,112 @@ class AuthController extends Controller
             'location' => $data['location'],
         ]);
 
+        $logger->info('New user registered', ['user_id' => $user->id, 'email' => $user->email]);
+
         Auth::login($user);
         return redirect()->route('home')->with('success',"account created successfully");
     } catch (\Exception $e) {
+        $logger->error('User registration failed', ['error' => $e->getMessage(), 'email' => $request->email]);
         return back()->with('error', 'Something went wrong: ' . $e->getMessage());
     }
     }
     public function showlogin(){
+
+        $logger = \App\Services\Logger::getInstance();
+
+    try {
+        $logger->info('Login page accessed', [
+            'accessed_by' => auth()->id() ?? null,
+        ]);
+    } catch (\Exception $e) {
+        $logger->error('Login page access logging failed', [
+            'error' => $e->getMessage(),
+        ]);
+    }
+        
         return view('myauth.login');
     }
     public function login(Request $request){
+
+        $logger = \App\Services\Logger::getInstance();
+        
       try {
-        $credentials =$request->validate([
-            'email'=>'required|email',
-            'password'=>'required',
-        ]);
+        $user = \App\Models\User::where('email', $request->email)->first();
 
-        $secretKey = env('PASSWORD_HMAC_KEY');
-        $hmacHash = hash_hmac('sha256', $request->password, $secretKey);
+        if ($user) {
+            $secretKey = env('PASSWORD_HMAC_KEY');
+            $hmacHash = hash_hmac('sha256', $request->password, $secretKey);
 
-
-        $user = User::where('email', $request->email)->first();
-
-            if($user && Hash::check($hmacHash, $user->password)){
+            if (Hash::check($hmacHash, $user->password)) {
                 Auth::login($user);
                 $request->session()->regenerate();
-                return redirect()->route('home')->with('success','Login success');
+
+                $logger->info('User logged in successfully', ['user_id' => $user->id]);
+
+                return redirect()->route('home')->with('success', 'Login successful');
+            } else {
+                $logger->warning('User login failed - wrong password', ['email' => $request->email]);
+                return back()->withErrors(['email' => 'Invalid credentials']);
             }
-        // if(Auth::attempt($credentials)){
-        //     $request->session()->regenerate();
-        //     return redirect()->route('home')->with('success','login success');
-        // }
-        return back()->withErrors(['email'=>'invalid credentials']);
-        } catch (\Exception $e) {
-        return back()->with('error', 'Something went wrong: ' . $e->getMessage());
+        } else {
+            $logger->warning('User login failed - email not found', ['email' => $request->email]);
+            return back()->withErrors(['email' => 'Invalid credentials']);
         }
+    } catch (\Exception $e) {
+        $logger->error('Login exception', ['error' => $e->getMessage(), 'email' => $request->email]);
+        return back()->with('error', 'Something went wrong: ' . $e->getMessage());
+    }
     }
 
     public function logout(Request $request){
+        $logger = \App\Services\Logger::getInstance();
+        $userId = auth()->id();
+
+    try {
         Auth::logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();
-        return redirect()->route('login');
+
+        $logger->info('User logged out', [
+            'user_id' => $userId,
+        ]);
+    } catch (\Exception $e) {
+        $logger->error('Logout failed', [
+            'user_id' => $userId,
+            'error' => $e->getMessage(),
+        ]);
+    }
+
+    return redirect()->route('login');
     }
 
     public function checkEmail(Request $request)
 {
+     $logger = \App\Services\Logger::getInstance();
+    
     $request->validate([
         'email' => 'required|email',
     ]);
 
-    $exists = \App\Models\User::where('email', $request->email)->exists();
+    try {
+        $exists = \App\Models\User::where('email', $request->email)->exists();
 
-    return response()->json(['exists' => $exists]);
+        $logger->info('Checked if email exists', [
+            'email' => $request->email,
+            'exists' => $exists,
+            'checked_by' => auth()->id() ?? null,
+        ]);
+
+        return response()->json(['exists' => $exists]);
+    } catch (\Exception $e) {
+        $logger->error('Email check failed', [
+            'email' => $request->email,
+            'error' => $e->getMessage(),
+            'checked_by' => auth()->id() ?? null,
+        ]);
+
+        return response()->json(['error' => 'Unable to check email'], 500);
+    }
 }
 
 }
