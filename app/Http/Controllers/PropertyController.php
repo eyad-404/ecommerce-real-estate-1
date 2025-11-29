@@ -52,6 +52,7 @@ class PropertyController extends Controller
     // Show all properties (with filters/search)
     public function index(Request $request)
     {
+        $logger=Logger::getInstance();
         try {
         $logger->info('Property index accessed', [
             'user_id' => auth()->id(),
