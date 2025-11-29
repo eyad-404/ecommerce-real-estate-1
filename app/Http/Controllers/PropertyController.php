@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Storage;
 use App\Http\Middleware\OwnsProperty;
 use App\Models\PropertyReservation;
 use App\Http\Middleware\Role;
+use App\Services\Logger;
 
 class PropertyController extends Controller
 {
@@ -22,7 +23,22 @@ class PropertyController extends Controller
     // Display property management page
     public function propertyManagement()
     {
+        $logger = Logger::getInstance();
         $user = auth()->user();
+
+         try {
+        $logger->info('Property management accessed', [
+            'user_id' => $user->id,
+            'email' => $user->email,
+            'role' => $user->role,
+        ]);
+    } catch (\Exception $e) {
+        $logger->error('Logging failed on property management access', [
+            'user_id' => $user->id,
+            'error' => $e->getMessage(),
+        ]);
+    }
+        
         $properties = Property::query()
             ->when($user->role === 'seller', fn ($query) => $query->where('user_id', $user->id))
             ->orderByDesc('id')
@@ -36,6 +52,24 @@ class PropertyController extends Controller
     // Show all properties (with filters/search)
     public function index(Request $request)
     {
+        try {
+        $logger->info('Property index accessed', [
+            'user_id' => auth()->id(),
+            'search_term' => $request->search_term ?? null,
+            'category' => $request->category ?? null,
+            'location' => $request->location ?? null,
+            'min_price' => $request->min_price ?? null,
+            'max_price' => $request->max_price ?? null,
+            'transaction_type' => $request->transaction_type ?? null,
+            'sort_by' => $request->sort_by ?? null,
+        ]);
+    } catch (\Exception $e) {
+        $logger->error('Logging failed on property index access', [
+            'user_id' => auth()->id(),
+            'error' => $e->getMessage(),
+        ]);
+    }
+        
         $query = Property::query();
 
         if ($request->filled('search_term')) {
@@ -94,6 +128,8 @@ class PropertyController extends Controller
     // Store new property
     public function store(Request $request)
     {
+        $logger = Logger::getInstance();
+        
         $data = $request->validate([
             'category' => 'required|string|max:100',
             'location' => 'required|string|max:150',
@@ -107,6 +143,7 @@ class PropertyController extends Controller
             'multiple_images.*' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:5120',
         ]);
 
+        try{
         $user = auth()->user();
         $data['user_id'] = ($user->role === 'admin' && !empty($data['user_id']))
             ? $data['user_id']
@@ -134,8 +171,13 @@ class PropertyController extends Controller
                 ]);
             }
         }
+            $logger->info('Property created successfully', ['property_id' => $property->id, 'user_id' => $user->id]);
 
         return response()->json(['success' => true, 'property' => $property], 201);
+        } catch (\Exception $e) {
+        $logger->error('Property creation failed', ['error' => $e->getMessage(), 'user_id' => auth()->id() ?? null]);
+        return response()->json(['error' => 'Creation failed'], 500);
+    }
     }
 
     // Edit form
@@ -148,6 +190,9 @@ class PropertyController extends Controller
     // Update property
     public function update(Request $request, Property $property)
     {
+        $logger = \App\Services\Logger::getInstance();
+
+        try {
         $data = $request->validate([
             'category' => 'nullable|string|max:100',
             'location' => 'nullable|string|max:150',
@@ -199,12 +244,30 @@ class PropertyController extends Controller
             }
         }
 
+             $logger->info('Property updated successfully', [
+            'property_id' => $property->id,
+            'user_id' => auth()->id(),
+            'updated_data' => $data,
+        ]);
+
         return response()->json(['success' => true, 'property' => $property->fresh()]);
+        } catch (\Exception $e) {
+        $logger->error('Property update failed', [
+            'property_id' => $property->id,
+            'user_id' => auth()->id(),
+            'error' => $e->getMessage(),
+        ]);
+
+        return response()->json(['error' => 'Update failed'], 500);
+    }
     }
 
     // Delete property
     public function destroy(Request $request, Property $property)
     {
+        $logger = \App\Services\Logger::getInstance();
+
+        try {
         if ($property->image && file_exists(public_path($property->image))) {
             @unlink(public_path($property->image));
         }
@@ -219,12 +282,33 @@ class PropertyController extends Controller
 
         $property->delete();
 
+            $logger->info('Property deleted successfully', [
+            'property_id' => $property->id,
+            'user_id' => auth()->id(),
+        ]);
         return response()->json(['success' => true]);
+        } catch (\Exception $e) {
+        $logger->error('Property deletion failed', [
+            'property_id' => $property->id,
+            'user_id' => auth()->id(),
+            'error' => $e->getMessage(),
+        ]);
+
+        return response()->json(['error' => 'Deletion failed'], 500);
+    }
     }
     public function reserve(Property $property)
 {
+    $logger = \App\Services\Logger::getInstance();
+     try {
+        $userId = auth()->id();
+
     if ($property->isReserved()) {
-        return redirect()->back()->with('error', 'Property already reserved.');
+        $logger->warning('Property reservation failed - already reserved', [
+                'property_id' => $property->id,
+                'user_id' => $userId,
+            ]);
+            return redirect()->back()->with('error', 'Property already reserved.');
     }
 
     PropertyReservation::create([
@@ -236,11 +320,25 @@ class PropertyController extends Controller
     $property->update([
         'status' => 'reserved',
     ]);
-
+$logger->info('Property reserved successfully', [
+            'property_id' => $property->id,
+            'user_id' => $userId,
+        ]);
     return redirect()->back()->with('success', 'Property reserved successfully.');
+     } catch (\Exception $e) {
+        $logger->error('Property reservation failed', [
+            'property_id' => $property->id,
+            'user_id' => auth()->id(),
+            'error' => $e->getMessage(),
+        ]);
+
+        return redirect()->back()->with('error', 'Failed to reserve property.');
+    }
 }
 public function cancelReservation(Property $property)
 {
+    $logger = \App\Services\Logger::getInstance();
+try {
     $reservation = $property->reservation;
 
     if (!$reservation) {
@@ -255,7 +353,21 @@ public function cancelReservation(Property $property)
     $reservation->delete();
     $property->update(['status' => 'available']);
 
+    $logger->info('Reservation cancelled successfully', [
+            'property_id' => $property->id,
+            'user_id' => $user->id,
+        ]);
+    
     return redirect()->back()->with('success', 'Reservation cancelled successfully.');
+} catch (\Exception $e) {
+        $logger->error('Reservation cancellation failed', [
+            'property_id' => $property->id,
+            'user_id' => auth()->id(),
+            'error' => $e->getMessage(),
+        ]);
+
+        return redirect()->back()->with('error', 'Failed to cancel reservation.');
+    }
 }
 
     public function paymentPlans(Property $property)
