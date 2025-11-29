@@ -21,6 +21,20 @@ class NewPasswordController extends Controller
      */
     public function create(Request $request): View
     {
+        $logger = Logger::getInstance();
+
+        try {
+        $logger->info('Password reset page accessed', [
+            'email' => $request->email ?? null,
+            'accessed_by' => auth()->id() ?? null,
+        ]);
+    } catch (\Exception $e) {
+        $logger->error('Password reset page logging failed', [
+            'email' => $request->email ?? null,
+            'error' => $e->getMessage(),
+        ]);
+    }
+        
         return view('myauth.reset-password', ['request' => $request]);
     }
 
