@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
+use App\Services\Logger;
 
 class ProfileController extends Controller
 {
@@ -20,6 +21,19 @@ class ProfileController extends Controller
      */
     public function show()
     {
+        $logger = Logger::getInstance();
+
+    try {
+        $logger->info('Profile page accessed', [
+            'user_id' => Auth::id(),
+            'email' => Auth::user()->email ?? null,
+        ]);
+    } catch (\Exception $e) {
+        $logger->error('Profile page logging failed', [
+            'error' => $e->getMessage(),
+            'user_id' => Auth::id(),
+        ]);
+    }
         return view('myauth.profile', ['user' => Auth::user()]);
     }
 
@@ -28,16 +42,14 @@ class ProfileController extends Controller
      */
     public function update(Request $request)
     {
-        $user = Auth::user();
+        $logger = Logger::getInstance();
+    $user = Auth::user();
 
+    try {
+        // Validation
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
-            'email' => [
-                'required',
-                'email',
-                'max:255',
-                Rule::unique('users')->ignore($user->id),
-            ],
+            'email' => ['required','email','max:255', Rule::unique('users')->ignore($user->id)],
             'phone' => 'nullable|string|max:20',
             'birth_date' => 'nullable|date',
             'gender' => 'nullable|in:male,female,other',
@@ -51,89 +63,75 @@ class ProfileController extends Controller
             if ($request->ajax()) {
                 return response()->json(['errors' => $validator->errors()], 422);
             }
-
             return back()->withErrors($validator)->withInput();
         }
 
-        $user->name = $request->name;
-        $user->email = $request->email;
-        $user->phone = $request->phone;
-        $user->birth_date = $request->birth_date;
-        $user->gender = $request->gender;
-        $user->location = $request->location;
+        // Update user fields
+        $user->fill($request->only(['name','email','phone','birth_date','gender','location']));
 
-        $secretKey = env('PASSWORD_HMAC_KEY');
-
+        // Password change logic
         if ($request->filled('password')) {
-            $hashedCurrentInput = $secretKey
-                ? hash_hmac('sha256', $request->current_password ?? '', $secretKey)
-                : ($request->current_password ?? '');
-            if (
-                !$request->filled('current_password') ||
-                !Hash::check($hashedCurrentInput, $user->password)
-            ) {
-                $error = ['current_password' => ['Current password is incorrect.']];
-                if ($request->ajax()) {
-                    return response()->json(['errors' => $error], 422);
-                }
+            $secretKey = env('PASSWORD_HMAC_KEY');
+            $hashedCurrentInput = hash_hmac('sha256', $request->current_password ?? '', $secretKey);
 
-                return back()->withErrors($error);
+            if (!$request->filled('current_password') || !Hash::check($hashedCurrentInput, $user->password)) {
+                $error = ['current_password' => ['Current password is incorrect.']];
+                return $request->ajax()
+                    ? response()->json(['errors' => $error], 422)
+                    : back()->withErrors($error);
             }
 
-            $newHash = $secretKey ? hash_hmac('sha256', $request->password, $secretKey) : $request->password;
+            $newHash = hash_hmac('sha256', $request->password, $secretKey);
             $user->password = Hash::make($newHash);
 
+            // Send email and fire event
             $token = Password::createToken($user);
-            $resetUrl = route('password.reset', ['token' => $token, 'email' => $user->email]);
-
-            Mail::send('emails.password_changed', ['user' => $user, 'resetUrl' => $resetUrl], function ($message) use ($user) {
-                $message->to($user->email, $user->name)
-                        ->subject('Your password has been changed');
+            $resetUrl = route('password.reset', ['token'=>$token,'email'=>$user->email]);
+            Mail::send('emails.password_changed', ['user'=>$user,'resetUrl'=>$resetUrl], function($message) use ($user) {
+                $message->to($user->email,$user->name)->subject('Your password has been changed');
             });
-
             event(new PasswordReset($user));
         }
 
-        $profile = $user->profile ?? new UserProfile(['user_id' => $user->id]);
-
+        // Profile image upload
+        $profile = $user->profile ?? new UserProfile(['user_id'=>$user->id]);
         if ($request->hasFile('profile_image')) {
             $destinationPath = public_path('images/profile');
+            if (!File::exists($destinationPath)) File::makeDirectory($destinationPath,0755,true);
 
-            if (!File::exists($destinationPath)) {
-                File::makeDirectory($destinationPath, 0755, true);
+            if ($profile->profile_image && File::exists($destinationPath.'/'.$profile->profile_image)) {
+                File::delete($destinationPath.'/'.$profile->profile_image);
             }
 
-            if ($profile->profile_image) {
-                $existingImage = $destinationPath.'/'.$profile->profile_image;
-                if (File::exists($existingImage)) {
-                    File::delete($existingImage);
-                }
-            }
-
-            $filename = uniqid('profile_', true).'.'.$request->file('profile_image')->extension();
-            $request->file('profile_image')->move($destinationPath, $filename);
+            $filename = uniqid('profile_',true).'.'.$request->file('profile_image')->extension();
+            $request->file('profile_image')->move($destinationPath,$filename);
             $profile->profile_image = $filename;
         }
 
-        if (!$profile->exists) {
-            $user->profile()->save($profile);
-        } elseif ($profile->isDirty()) {
-            $profile->save();
-        }
-
         $user->save();
+        if (!$profile->exists) $user->profile()->save($profile);
+        elseif ($profile->isDirty()) $profile->save();
         $user->load('profile');
+
+        $logger->info('User profile updated successfully', ['user_id'=>$user->id]);
 
         if ($request->ajax()) {
             return response()->json([
-                'success' => true,
-                'profile_image' => $user->profile_image_url,
-                'has_profile_image' => (bool) optional($user->profile)->profile_image,
-                'message' => 'Profile updated successfully!',
+                'success'=>true,
+                'profile_image'=>$user->profile_image_url,
+                'has_profile_image'=> (bool) optional($user->profile)->profile_image,
+                'message'=>'Profile updated successfully!',
             ]);
         }
 
-        return back()->with('success', 'Profile updated successfully!');
+        return back()->with('success','Profile updated successfully!');
+
+    } catch (\Exception $e) {
+        $logger->error('Profile update failed', ['user_id'=>$user->id, 'error'=>$e->getMessage()]);
+        return $request->ajax()
+            ? response()->json(['error'=>'Update failed'],500)
+            : back()->with('error','Update failed');
+    }
     }
 
     /**
@@ -141,9 +139,11 @@ class ProfileController extends Controller
      */
     public function deletePic()
     {
-        $user = Auth::user();
-        $profile = $user->profile;
+        $logger = Logger::getInstance();
+    $user = Auth::user();
+    $profile = $user->profile;
 
+    try {
         if ($profile && $profile->profile_image) {
             $destinationPath = public_path('images/profile/'.$profile->profile_image);
             if (File::exists($destinationPath)) {
@@ -152,16 +152,28 @@ class ProfileController extends Controller
 
             $profile->profile_image = null;
             $profile->save();
+
+            $logger->info('Profile picture deleted', [
+                'user_id' => $user->id,
+                'email' => $user->email,
+            ]);
         }
-
-        $user->load('profile');
-
-        return response()->json([
-            'success' => true,
-            'profile_image' => $user->profile_image_url,
-            'has_profile_image' => false,
-            'message' => 'Profile picture deleted!',
+    } catch (\Exception $e) {
+        $logger->error('Profile picture deletion failed', [
+            'user_id' => $user->id,
+            'email' => $user->email,
+            'error' => $e->getMessage(),
         ]);
+    }
+
+    $user->load('profile');
+
+    return response()->json([
+        'success' => true,
+        'profile_image' => $user->profile_image_url,
+        'has_profile_image' => false,
+        'message' => 'Profile picture deleted!',
+    ]);
     }
 
     /**
@@ -169,21 +181,39 @@ class ProfileController extends Controller
      */
     public function checkPassword(Request $request)
     {
-        $user = Auth::user();
-        $currentPassword = $request->input('current_password');
+        $logger = Logger::getInstance();
+    $user = Auth::user();
+    $currentPassword = $request->input('current_password');
+    $secretKey = env('PASSWORD_HMAC_KEY');
 
-        $secretKey = env('PASSWORD_HMAC_KEY');
+    if (!$currentPassword) {
+        $logger->warning('Password check failed - empty input', [
+            'user_id' => $user->id,
+            'email' => $user->email,
+        ]);
 
-        if (!$currentPassword) {
-            return response()->json(['valid' => false, 'message' => 'Enter your current password']);
-        }
+        return response()->json([
+            'valid' => false,
+            'message' => 'Enter your current password'
+        ]);
+    }
 
-        $hashedInput = $secretKey ? hash_hmac('sha256', $currentPassword, $secretKey) : $currentPassword;
+    $hashedInput = $secretKey ? hash_hmac('sha256', $currentPassword, $secretKey) : $currentPassword;
 
-        if (Hash::check($hashedInput, $user->password)) {
-            return response()->json(['valid' => true, 'message' => 'Password is correct']);
-        }
+    if (Hash::check($hashedInput, $user->password)) {
+        $logger->info('Password check successful', [
+            'user_id' => $user->id,
+            'email' => $user->email,
+        ]);
 
-        return response()->json(['valid' => false, 'message' => 'Password is incorrect']);
+        return response()->json(['valid' => true, 'message' => 'Password is correct']);
+    }
+
+    $logger->warning('Password check failed - incorrect password', [
+        'user_id' => $user->id,
+        'email' => $user->email,
+    ]);
+
+    return response()->json(['valid' => false, 'message' => 'Password is incorrect']);
     }
 }
