@@ -7,13 +7,28 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
+use App\Services\Logger;
 
 class DashboardController extends Controller
 {
     public function index()
     {
+        $logger = \App\Services\Logger::getInstance();
         $user = auth()->user();
 
+        try {
+        $logger->info('Dashboard accessed', [
+            'user_id' => $user->id,
+            'email' => $user->email,
+            'role' => $user->role,
+        ]);
+    } catch (\Exception $e) {
+        $logger->error('Dashboard logging failed', [
+            'user_id' => $user->id,
+            'error' => $e->getMessage(),
+        ]);
+    }
+        
         if ($user->role === 'admin') {
             $totalListings = Property::count();
             $last30Listings = Property::where('created_at', '>=', now()->subDays(30))->count();
@@ -64,21 +79,56 @@ class DashboardController extends Controller
     // Admin-only AJAX endpoint
     public function getClientData(Request $request)
     {
+        $logger = \App\Services\Logger::getInstance();
         $user = auth()->user();
+        
         if ($user->role !== 'admin') {
-            return response()->json(['error' => 'Unauthorized'], 403);
+        try {
+            $logger->warning('Unauthorized client data access attempt', [
+                'user_id' => $user->id,
+                'email' => $user->email,
+            ]);
+        } catch (\Exception $e) {
+            // fail silently
         }
+        return response()->json(['error' => 'Unauthorized'], 403);
+    }
 
+         try {
         if (empty($request->id)) {
             $properties = Property::all();
             $visitors = DB::table('sessions')->count();
+
+            $logger->info('Admin accessed all clients data', [
+                'user_id' => $user->id,
+                'email' => $user->email,
+            ]);
         } else {
             $client = User::with('properties')->find($request->id);
-            if (!$client) return response()->json(['error' => 'Client not found'], 404);
+            if (!$client) {
+                $logger->warning('Admin attempted to access non-existent client', [
+                    'user_id' => $user->id,
+                    'client_id' => $request->id,
+                ]);
+                return response()->json(['error' => 'Client not found'], 404);
+            }
 
             $properties = $client->properties;
             $visitors = $client->visitors ?? 0;
+
+            $logger->info('Admin accessed client data', [
+                'user_id' => $user->id,
+                'client_id' => $client->id,
+                'email' => $user->email,
+            ]);
         }
+    } catch (\Exception $e) {
+        $logger->error('Failed to get client data', [
+            'user_id' => $user->id,
+            'error' => $e->getMessage(),
+        ]);
+        return response()->json(['error' => 'Failed to retrieve data'], 500);
+    }
 
         $sales = $this->generateMonthlyStats($properties);
         $pie = $this->generatePieData($properties);
