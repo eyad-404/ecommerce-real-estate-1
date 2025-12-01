@@ -20,6 +20,9 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 # Copy project files
 COPY . .
 
+# Add Brevo PHP SDK
+RUN composer require getbrevo/brevo-php
+
 # Install PHP dependencies
 RUN composer install --no-dev --optimize-autoloader
 
