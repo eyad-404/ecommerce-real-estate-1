@@ -16,7 +16,7 @@ class PropertyController extends Controller
 {
     public function __construct()
     {
-        $this->middleware('auth');
+        
         $this->middleware(OwnsProperty::class)->only(['edit', 'update', 'destroy']);
     }
 
