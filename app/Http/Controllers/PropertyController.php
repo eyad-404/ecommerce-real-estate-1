@@ -16,7 +16,6 @@ class PropertyController extends Controller
 {
     public function __construct()
     {
-        
         $this->middleware(OwnsProperty::class)->only(['edit', 'update', 'destroy']);
     }
 
