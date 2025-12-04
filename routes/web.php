@@ -70,10 +70,11 @@ Route::delete('/users/{user}', [UserController::class, 'destroy'])->name('users.
 
 
 Route::resource('properties', PropertyController::class)->except(['edit', 'update', 'destroy']); 
-Route::middleware(['auth'])->group(function () {
+
 Route::get('/properties', [PropertyController::class, 'index'])->name('properties.index');
+Route::middleware(['auth'])->group(function () {
 Route::get('/properties/{property}', [PropertyController::class, 'show'])->name('properties.show');
-}
+});
 Route::get('/property-details', function() {
     return view('properties.property-details');
 })->name('property-details');
